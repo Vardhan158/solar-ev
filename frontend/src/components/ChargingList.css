@@ -1,0 +1,39 @@
+/* Charging List Container */
+.charging-container {
+    background-color: rgba(0, 0, 0, 0.8); /* Dark background with opacity */
+    padding: 20px;
+    border-radius: 10px;
+    width: 80%;
+    max-width: 600px;
+    margin: 50px auto;
+    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.3);
+  }
+  
+  /* Title Styling */
+  .charging-container h2 {
+    text-align: center;
+    color: white;
+    text-shadow: 2px 2px 4px black; /* Improve visibility */
+  }
+  
+  /* List Styling */
+  .charging-list {
+    list-style: none;
+    padding: 0;
+  }
+  
+  .charging-list li {
+    font-size: 18px;
+    font-weight: bold;
+    color: white; /* Ensure text is visible */
+    text-shadow: 1px 1px 2px black; /* Add shadow for contrast */
+    margin: 10px 0;
+  }
+  
+  /* No Records Message */
+  .no-records {
+    text-align: center;
+    color: gray;
+    font-style: italic;
+  }
+  
