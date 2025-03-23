@@ -20,7 +20,7 @@ const ChargingForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/charging', form);
+      await axios.post('https://solar-ev-backend.onrender.com/api/charging', form);
       alert('Record added successfully!');
 
       // Set bill details to display the BillingComponent
