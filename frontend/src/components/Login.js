@@ -1,44 +1,63 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
-const Login = ({ onLogin }) => {
+const Register = () => {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/login', {
+      const response = await fetch('http://localhost:5000/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ name, email, password }),
       });
 
-      const data = await response.json();
+      const text = await response.text(); // Read response as text first
+      console.log("Raw Response:", text); // Debugging - Check if it's HTML
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Login failed');
+      // Try parsing as JSON
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (jsonError) {
+        throw new Error('Server returned invalid JSON. Possible backend issue.');
       }
 
-      // Save token to localStorage
-      localStorage.setItem('token', data.token);
-      onLogin(); // Call parent login function (if needed)
-      
-      navigate('/dashboard'); // Redirect to Dashboard
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
+
+      setSuccess('✅ Registration successful! Redirecting...');
+      setTimeout(() => navigate('/login'), 2000);
     } catch (err) {
-      setError(err.message);
+      setError(`❌ ${err.message}`);
     }
   };
 
   return (
-    <div className="login-container">
-      <h2>Login</h2>
+    <div>
+      <h2>Register</h2>
+
       {error && <p style={{ color: 'red' }}>{error}</p>}
+      {success && <p style={{ color: 'green' }}>{success}</p>}
+
       <form onSubmit={handleSubmit}>
+        <input 
+          type="text" 
+          placeholder="Name" 
+          value={name} 
+          onChange={(e) => setName(e.target.value)} 
+          required 
+        />
         <input 
           type="email" 
           placeholder="Email" 
@@ -53,13 +72,12 @@ const Login = ({ onLogin }) => {
           onChange={(e) => setPassword(e.target.value)} 
           required 
         />
-        <button type="submit">Login</button>
+        <button type="submit">Register</button>
       </form>
-      
-      <p className="account">Don't have an account? <a href="/register">Register</a></p>
-      <p className="forgot-password"><a href="/forgot-password">Forgot Password?</a></p> 
+
+      <p>Already have an account? <Link to="/login">Login</Link></p>
     </div>
   );
 };
 
-export default Login;
+export default Register;
