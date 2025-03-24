@@ -8,7 +8,7 @@ const ChargingList = () => {
   useEffect(() => {
     const fetchRecords = async () => {
       try {
-        const response = await axios.get('https://solar-ev-frontend.onrender.com//api/charging');
+        const response = await axios.get('https://solar-ev-backend.onrender.com/api/charging');
         setRecords(response.data);
       } catch (error) {
         console.error('Error fetching charging records:', error);
