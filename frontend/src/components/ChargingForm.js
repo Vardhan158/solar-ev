@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import BillingComponent from './BillingComponent'; // Import the billing component
 
+const CHARGING_RATE = 10; // Rate per kWh
+
 const ChargingForm = () => {
   const [form, setForm] = useState({
     vehicleId: '',
@@ -14,7 +16,15 @@ const ChargingForm = () => {
   const [billDetails, setBillDetails] = useState(null);
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    let updatedForm = { ...form, [name]: value };
+
+    // Auto-calculate the amount charged when energyUsed is updated
+    if (name === 'energyUsed' && value) {
+      updatedForm.amountCharged = (parseFloat(value) * CHARGING_RATE).toFixed(2);
+    }
+
+    setForm(updatedForm);
   };
 
   const handleSubmit = async (e) => {
@@ -41,7 +51,13 @@ const ChargingForm = () => {
         <input type="datetime-local" name="startTime" onChange={handleChange} required />
         <input type="datetime-local" name="endTime" onChange={handleChange} required />
         <input type="number" name="energyUsed" placeholder="Energy Used (kWh)" onChange={handleChange} required />
-        <input type="number" name="amountCharged" placeholder="Amount Charged" onChange={handleChange} required />
+        <input 
+          type="number" 
+          name="amountCharged" 
+          placeholder="Amount Charged" 
+          value={form.amountCharged} 
+          readOnly 
+        />
         <button type="submit">Add Record</button>
       </form>
 
