@@ -87,7 +87,7 @@ app.post("/api/forgot-password", async (req, res) => {
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
 
-    const resetLink = `https://solar-ev-backend.onrender.com/reset-password/${resetToken}`;
+    const resetLink = `https://solar-ev-frontend.onrender.com/reset-password/${resetToken}`;
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: user.email,
