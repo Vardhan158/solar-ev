@@ -87,7 +87,7 @@ app.post("/api/forgot-password", async (req, res) => {
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
 
-    const resetLink = `https://solar-ev-backend.onrender.com/reset-password/${resetToken}`;
+    const resetLink = `https://your-frontend-domain.com/reset-password/${resetToken}`;
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: user.email,
@@ -100,6 +100,11 @@ app.post("/api/forgot-password", async (req, res) => {
     console.error("Forgot Password Error:", err);
     res.status(500).json({ error: "Server error. Try again later." });
   }
+});
+
+// ✅ GET RESET PASSWORD PAGE (Frontend Handling)
+app.get("/reset-password/:token", (req, res) => {
+  res.send("Reset password page should be handled by the frontend.");
 });
 
 // ✅ RESET PASSWORD (UPDATE PASSWORD)
