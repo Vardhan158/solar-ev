@@ -5,6 +5,9 @@ body {
   font-family: 'Poppins', sans-serif;
   background: url('./assets/image.jpg') no-repeat center center fixed;
   background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
   margin: 0;
   padding: 0;
   text-align: center;
@@ -249,5 +252,11 @@ button:hover {
   .bill {
     box-shadow: none;
     border: none;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    background-attachment: scroll;
   }
 }
