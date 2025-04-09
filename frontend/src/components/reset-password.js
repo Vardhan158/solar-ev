@@ -41,7 +41,7 @@ const ResetPassword = () => {
 
     try {
       const response = await fetch(
-        `https://solar-ev-backend.onrender.com/api/reset-password/${token}`,
+        `https://solar-ev-frontend.onrender.com/api/reset-password/${token}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
