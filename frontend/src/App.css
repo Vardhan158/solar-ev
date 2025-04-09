@@ -35,16 +35,23 @@ h1, h2 {
 /* =============================
    Navigation
 ============================= */
-nav ul {
+.dashboard-nav ul {
   list-style: none;
   padding: 0;
   margin: 30px 0;
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 20px;
+  flex-wrap: wrap;
 }
 
-nav a, nav button {
+.dashboard-nav li {
+  margin: 0;
+}
+
+.dashboard-nav a,
+.logout-btn {
   font-size: 18px;
   color: white;
   background: #007bff;
@@ -56,7 +63,8 @@ nav a, nav button {
   transition: background 0.3s ease;
 }
 
-nav a:hover, nav button:hover {
+.dashboard-nav a:hover,
+.logout-btn:hover {
   background: #0056b3;
 }
 
@@ -225,14 +233,19 @@ button:hover {
     width: 95%;
   }
 
-  nav ul {
+  .dashboard-nav ul {
     flex-direction: column;
     gap: 10px;
   }
 
-  nav a, nav button {
+  .dashboard-nav a,
+  .logout-btn {
     width: 100%;
     font-size: 20px;
+  }
+
+  body {
+    background-attachment: scroll;
   }
 }
 
@@ -252,11 +265,5 @@ button:hover {
   .bill {
     box-shadow: none;
     border: none;
-  }
-}
-
-@media (max-width: 768px) {
-  body {
-    background-attachment: scroll;
   }
 }
