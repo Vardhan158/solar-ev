@@ -113,7 +113,7 @@ app.post("/api/forgot-password", async (req, res) => {
       },
     });
 
-    const resetLink = `https://solar-ev-backend.onrender.com/reset-password/${resetToken}`;
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: user.email,
@@ -212,7 +212,7 @@ app.use((req, res) => {
   res.status(404).json({ error: "Route not found" });
 });
 
-// ✅ Global Error Handler (optional)
+// ✅ Global Error Handler
 app.use((err, req, res, next) => {
   console.error("Unhandled Error:", err.stack);
   res.status(500).json({ error: "Something went wrong!" });
