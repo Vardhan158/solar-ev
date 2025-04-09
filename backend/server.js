@@ -115,7 +115,7 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// ✅ Forgot Password - Send Email
+// ✅Forgot Password - Send Email
 app.post("/api/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
