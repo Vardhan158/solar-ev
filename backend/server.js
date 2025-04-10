@@ -34,7 +34,7 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", userSchema);
 
-// ✅ Charging Record Schema
+// ✅ Charging Record Schema (Updated with isPaid)
 const chargingSchema = new mongoose.Schema({
   vehicleId: { type: String, required: true },
   startTime: { type: Date, required: true },
@@ -48,6 +48,10 @@ const chargingSchema = new mongoose.Schema({
     type: Number,
     required: true,
     min: [0, "Amount cannot be negative"]
+  },
+  isPaid: {
+    type: Boolean,
+    default: false
   }
 }, { timestamps: true });
 
@@ -57,7 +61,6 @@ const ChargingRecord = mongoose.model("ChargingRecord", chargingSchema);
 app.post("/api/register", async (req, res) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password)
       return res.status(400).json({ error: "Email and password are required" });
 
@@ -80,7 +83,6 @@ app.post("/api/register", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password)
       return res.status(400).json({ error: "Email and password required" });
 
@@ -107,7 +109,6 @@ app.post("/api/login", async (req, res) => {
 app.post("/api/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
-
     const user = await User.findOne({ email });
     if (!user)
       return res.status(400).json({ error: "User not found" });
@@ -168,10 +169,10 @@ app.post("/api/reset-password/:token", async (req, res) => {
   }
 });
 
-// ✅ Add Charging Record
+// ✅ Add Charging Record (with isPaid support)
 app.post("/api/charging", async (req, res) => {
   try {
-    const { vehicleId, startTime, endTime, energyUsed, amountCharged } = req.body;
+    const { vehicleId, startTime, endTime, energyUsed, amountCharged, isPaid } = req.body;
 
     if (!vehicleId || !startTime || !endTime || energyUsed == null || amountCharged == null)
       return res.status(400).json({ error: "All fields are required" });
@@ -182,6 +183,7 @@ app.post("/api/charging", async (req, res) => {
       endTime: new Date(endTime),
       energyUsed: Number(energyUsed),
       amountCharged: Number(amountCharged),
+      isPaid: isPaid ?? false
     });
 
     await record.save();
@@ -192,7 +194,7 @@ app.post("/api/charging", async (req, res) => {
   }
 });
 
-// ✅ Get Charging Records
+// ✅ Get All Charging Records
 app.get("/api/charging-records", async (req, res) => {
   try {
     const records = await ChargingRecord.find().sort({ createdAt: -1 });
@@ -200,6 +202,24 @@ app.get("/api/charging-records", async (req, res) => {
   } catch (err) {
     console.error("Fetch Error:", err.message);
     res.status(500).json({ error: "Unable to fetch records" });
+  }
+});
+
+// ✅ Update Payment Status
+app.put("/api/charging/:id/pay", async (req, res) => {
+  try {
+    const record = await ChargingRecord.findByIdAndUpdate(
+      req.params.id,
+      { isPaid: true },
+      { new: true }
+    );
+
+    if (!record) return res.status(404).json({ error: "Record not found" });
+
+    res.json({ message: "Payment marked as paid", record });
+  } catch (err) {
+    console.error("Payment Update Error:", err.message);
+    res.status(500).json({ error: "Failed to update payment status" });
   }
 });
 
