@@ -147,8 +147,7 @@ app.post("/api/forgot-password", async (req, res) => {
 // ✅ Reset Password
 app.post("/api/reset-password/:token", async (req, res) => {
   try {
-    const resetToken = req.params.token;
-    const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+    const hashedToken = crypto.createHash("sha256").update(req.params.token).digest("hex");
 
     const user = await User.findOne({
       resetToken: hashedToken,
@@ -158,11 +157,7 @@ app.post("/api/reset-password/:token", async (req, res) => {
     if (!user)
       return res.status(400).json({ error: "Invalid or expired token" });
 
-    const { password } = req.body;
-    if (!password)
-      return res.status(400).json({ error: "Password is required" });
-
-    user.password = await bcrypt.hash(password, 10);
+    user.password = await bcrypt.hash(req.body.password, 10);
     user.resetToken = null;
     user.resetTokenExpiry = null;
     await user.save();
@@ -241,4 +236,4 @@ app.use((err, req, res, next) => {
 
 // ✅ Start Server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`)); 
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
