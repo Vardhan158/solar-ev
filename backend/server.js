@@ -71,7 +71,8 @@ const ChargingRecord = mongoose.model("ChargingRecord", chargingSchema);
 
 // Helper: Send Reset Email
 async function sendResetEmail(user, resetToken) {
-  const resetLink = `${process.env.FRONTEND_URL || "https://solar-ev-frontend.onrender.com"}/reset-password/${resetToken}`;
+  const resetLink =
+    `${process.env.FRONTEND_URL || "https://solar-ev-frontend.onrender.com"}/reset-password/${resetToken}`;
 
   const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -276,12 +277,17 @@ app.put("/api/charging/:id/pay", async (req, res) => {
 // Create Razorpay Order
 app.post("/api/create-order", async (req, res) => {
   try {
-    const { amount } = req.body;
+    const { amount, chargingRecordId } = req.body;
 
     if (!amount || amount <= 0) {
       return res
         .status(400)
         .json({ error: "Amount must be a positive number" });
+    }
+    if (!chargingRecordId) {
+      return res
+        .status(400)
+        .json({ error: "chargingRecordId is required to link payment" });
     }
 
     const options = {
@@ -289,6 +295,9 @@ app.post("/api/create-order", async (req, res) => {
       currency: "INR",
       receipt: `receipt_order_${Date.now()}`,
       payment_capture: 1, // auto capture payment
+      notes: {
+        chargingRecordId, // pass charging record ID in notes to link payment later
+      },
     };
 
     const order = await razorpay.orders.create(options);
@@ -299,34 +308,50 @@ app.post("/api/create-order", async (req, res) => {
   }
 });
 
-// Verify Razorpay Payment
-app.post("/api/verify-payment", (req, res) => {
+// Verify Razorpay Payment AND update charging record payment status automatically
+app.post("/api/verify-payment", async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      chargingRecordId,
+    } = req.body;
 
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({ error: "Invalid payment details" });
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !chargingRecordId) {
+      return res.status(400).json({ error: "Missing required payment verification data" });
     }
 
-    const body = razorpay_order_id + "|" + razorpay_payment_id;
-    const expectedSignature = crypto
+    // Step 1: Verify signature
+    const generated_signature = require("crypto")
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(body)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
       .digest("hex");
 
-    if (expectedSignature === razorpay_signature) {
-      return res.json({ success: true, message: "Payment verified successfully" });
-    } else {
-      return res.status(400).json({ success: false, error: "Invalid signature" });
+    if (generated_signature !== razorpay_signature) {
+      return res.status(400).json({ error: "Invalid payment signature" });
     }
+
+    // Step 2: Update charging record to mark as paid
+    const chargingRecord = await ChargingRecord.findByIdAndUpdate(
+      chargingRecordId,
+      { isPaid: true },
+      { new: true }
+    );
+
+    if (!chargingRecord) {
+      return res.status(404).json({ error: "Charging record not found" });
+    }
+
+    res.json({ success: true, message: "Payment verified and charging record marked as paid", chargingRecord });
   } catch (err) {
-    console.error("Verify Payment Error:", err);
-    res.status(500).json({ error: "Failed to verify payment" });
+    console.error("Payment Verification Error:", err);
+    res.status(500).json({ error: "Payment verification failed" });
   }
 });
 
-// Server Listener
+// Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
