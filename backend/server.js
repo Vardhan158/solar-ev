@@ -12,40 +12,48 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// MongoDB Connection
+// ===== MongoDB Connection =====
 mongoose
-  .connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// Razorpay Setup
+// ===== Razorpay Setup =====
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
 // ===== MongoDB Schemas =====
+const userSchema = new mongoose.Schema(
+  {
+    email: { type: String, unique: true, required: true },
+    password: { type: String, required: true },
+    resetToken: String,
+    resetTokenExpiry: Date,
+  },
+  { timestamps: true }
+);
 
-const userSchema = new mongoose.Schema({
-  email: { type: String, unique: true, required: true },
-  password: { type: String, required: true },
-  resetToken: String,
-  resetTokenExpiry: Date,
-}, { timestamps: true });
-
-const chargingSchema = new mongoose.Schema({
-  vehicleId: { type: String, required: true },
-  startTime: { type: Date, required: true },
-  endTime: { type: Date, required: true },
-  energyUsed: { type: Number, required: true },
-  amountCharged: { type: Number, required: true },
-  isPaid: { type: Boolean, default: false },
-}, { timestamps: true });
+const chargingSchema = new mongoose.Schema(
+  {
+    vehicleId: { type: String, required: true },
+    startTime: { type: Date, required: true },
+    endTime: { type: Date, required: true },
+    energyUsed: { type: Number, required: true },
+    amountCharged: { type: Number, required: true },
+    isPaid: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
 
 const User = mongoose.model("User", userSchema);
 const ChargingRecord = mongoose.model("ChargingRecord", chargingSchema);
 
-// ===== Helper Function: Send Password Reset Email =====
+// ===== Helper: Send Password Reset Email =====
 async function sendResetEmail(user, token) {
   const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/reset-password/${token}`;
 
@@ -61,11 +69,11 @@ async function sendResetEmail(user, token) {
     to: user.email,
     from: process.env.EMAIL_USER,
     subject: "Password Reset",
-    html: `<p>Click <a href="${resetUrl}">here</a> to reset your password. Token expires in 1 hour.</p>`,
+    html: `<p>Click <a href="${resetUrl}">here</a> to reset your password. This link expires in 1 hour.</p>`,
   });
 }
 
-// ===== Routes =====
+// ===== Auth Routes =====
 
 // Register
 app.post("/api/register", async (req, res) => {
@@ -93,8 +101,9 @@ app.post("/api/login", async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
 
     const user = await User.findOne({ email });
-    if (!user || !(await bcrypt.compare(password, user.password)))
+    if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: "Invalid credentials" });
+    }
 
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
     res.json({ message: "Login successful", token });
@@ -149,6 +158,8 @@ app.post("/api/reset-password/:token", async (req, res) => {
   }
 });
 
+// ===== Charging Records Routes =====
+
 // Add Charging Record
 app.post("/api/charging", async (req, res) => {
   try {
@@ -186,7 +197,7 @@ app.get("/api/charging-records", async (req, res) => {
   }
 });
 
-// Mark Charging Record as Paid
+// Mark Charging Record as Paid (manual)
 app.put("/api/charging/:id/pay", async (req, res) => {
   try {
     const record = await ChargingRecord.findByIdAndUpdate(
@@ -202,6 +213,8 @@ app.put("/api/charging/:id/pay", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+
+// ===== Razorpay Routes =====
 
 // Create Razorpay Order
 app.post("/api/create-order", async (req, res) => {
