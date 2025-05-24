@@ -9,6 +9,7 @@ const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
+const Razorpay = require("razorpay");
 
 const app = express();
 
@@ -21,8 +22,14 @@ mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log("✅ MongoDB Connected"))
-.catch((err) => console.error("❌ MongoDB Connection Error:", err));
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("❌ MongoDB Connection Error:", err));
+
+// ✅ Razorpay Instance
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
 
 // ✅ User Schema
 const userSchema = new mongoose.Schema({
@@ -34,7 +41,7 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", userSchema);
 
-// ✅ Charging Record Schema (Updated with isPaid)
+// ✅ Charging Record Schema (with isPaid flag)
 const chargingSchema = new mongoose.Schema({
   vehicleId: { type: String, required: true },
   startTime: { type: Date, required: true },
@@ -61,6 +68,7 @@ const ChargingRecord = mongoose.model("ChargingRecord", chargingSchema);
 app.post("/api/register", async (req, res) => {
   try {
     const { email, password } = req.body;
+
     if (!email || !password)
       return res.status(400).json({ error: "Email and password are required" });
 
@@ -69,12 +77,13 @@ app.post("/api/register", async (req, res) => {
       return res.status(400).json({ error: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
+
     const user = new User({ email, password: hashedPassword });
     await user.save();
 
     res.json({ message: "User registered successfully" });
   } catch (err) {
-    console.error("Register Error:", err.message);
+    console.error("Register Error:", err);
     res.status(500).json({ error: "Server error. Try again later." });
   }
 });
@@ -83,6 +92,7 @@ app.post("/api/register", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+
     if (!email || !password)
       return res.status(400).json({ error: "Email and password required" });
 
@@ -100,15 +110,19 @@ app.post("/api/login", async (req, res) => {
 
     res.json({ message: "Login successful", token });
   } catch (err) {
-    console.error("Login Error:", err.message);
+    console.error("Login Error:", err);
     res.status(500).json({ error: "Server error. Try again later." });
   }
 });
 
-// ✅ Forgot Password - Send Email
+// ✅ Forgot Password - Send Email with Token
 app.post("/api/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
+
+    if (!email)
+      return res.status(400).json({ error: "Email is required" });
+
     const user = await User.findOne({ email });
     if (!user)
       return res.status(400).json({ error: "User not found" });
@@ -117,11 +131,12 @@ app.post("/api/forgot-password", async (req, res) => {
     const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
 
     user.resetToken = hashedToken;
-    user.resetTokenExpiry = Date.now() + 3600000; // 1 hour
+    user.resetTokenExpiry = Date.now() + 3600000; // 1 hour expiry
     await user.save();
 
-    const resetLink = `https://solar-ev-frontend.onrender.com/reset-password/${resetToken}`;
+    const resetLink = `${process.env.FRONTEND_URL || "https://solar-ev-frontend.onrender.com"}/reset-password/${resetToken}`;
 
+    // Configure mail transporter
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -130,16 +145,17 @@ app.post("/api/forgot-password", async (req, res) => {
       },
     });
 
+    // Send mail
     await transporter.sendMail({
       to: user.email,
       from: process.env.EMAIL_USER,
-      subject: "Password Reset",
-      html: `<p>Click <a href="${resetLink}">here</a> to reset your password. This link will expire in 1 hour.</p>`,
+      subject: "Password Reset Request",
+      html: `<p>You requested a password reset.</p><p>Click <a href="${resetLink}">here</a> to reset your password. This link will expire in 1 hour.</p>`,
     });
 
     res.json({ message: "Password reset link sent to email!" });
   } catch (err) {
-    console.error("Forgot Password Error:", err.message);
+    console.error("Forgot Password Error:", err);
     res.status(500).json({ error: "Something went wrong" });
   }
 });
@@ -147,7 +163,13 @@ app.post("/api/forgot-password", async (req, res) => {
 // ✅ Reset Password
 app.post("/api/reset-password/:token", async (req, res) => {
   try {
-    const hashedToken = crypto.createHash("sha256").update(req.params.token).digest("hex");
+    const { password } = req.body;
+    const token = req.params.token;
+
+    if (!password)
+      return res.status(400).json({ error: "Password is required" });
+
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
     const user = await User.findOne({
       resetToken: hashedToken,
@@ -157,19 +179,20 @@ app.post("/api/reset-password/:token", async (req, res) => {
     if (!user)
       return res.status(400).json({ error: "Invalid or expired token" });
 
-    user.password = await bcrypt.hash(req.body.password, 10);
-    user.resetToken = null;
-    user.resetTokenExpiry = null;
+    user.password = await bcrypt.hash(password, 10);
+    user.resetToken = undefined;
+    user.resetTokenExpiry = undefined;
+
     await user.save();
 
     res.json({ message: "Password reset successful" });
   } catch (err) {
-    console.error("Reset Password Error:", err.message);
+    console.error("Reset Password Error:", err);
     res.status(500).json({ error: "Something went wrong" });
   }
 });
 
-// ✅ Add Charging Record (with isPaid support)
+// ✅ Add Charging Record
 app.post("/api/charging", async (req, res) => {
   try {
     const { vehicleId, startTime, endTime, energyUsed, amountCharged, isPaid } = req.body;
@@ -183,13 +206,13 @@ app.post("/api/charging", async (req, res) => {
       endTime: new Date(endTime),
       energyUsed: Number(energyUsed),
       amountCharged: Number(amountCharged),
-      isPaid: isPaid ?? false
+      isPaid: isPaid ?? false,
     });
 
     await record.save();
     res.json({ message: "Charging record saved!", record });
   } catch (err) {
-    console.error("Charging Error:", err.message);
+    console.error("Charging Error:", err);
     res.status(500).json({ error: "Failed to save record" });
   }
 });
@@ -200,12 +223,12 @@ app.get("/api/charging-records", async (req, res) => {
     const records = await ChargingRecord.find().sort({ createdAt: -1 });
     res.json(records);
   } catch (err) {
-    console.error("Fetch Error:", err.message);
+    console.error("Fetch Charging Records Error:", err);
     res.status(500).json({ error: "Unable to fetch records" });
   }
 });
 
-// ✅ Update Payment Status
+// ✅ Update Payment Status of Charging Record
 app.put("/api/charging/:id/pay", async (req, res) => {
   try {
     const record = await ChargingRecord.findByIdAndUpdate(
@@ -214,26 +237,66 @@ app.put("/api/charging/:id/pay", async (req, res) => {
       { new: true }
     );
 
-    if (!record) return res.status(404).json({ error: "Record not found" });
+    if (!record) return res.status(404).json({ error: "Charging record not found" });
 
-    res.json({ message: "Payment marked as paid", record });
+    res.json({ message: "Payment status updated", record });
   } catch (err) {
-    console.error("Payment Update Error:", err.message);
+    console.error("Payment Status Update Error:", err);
     res.status(500).json({ error: "Failed to update payment status" });
   }
 });
 
-// ✅ Catch-All 404 Route
-app.use((req, res) => {
-  res.status(404).json({ error: "Route not found" });
+// ✅ Create Razorpay Order
+app.post("/api/create-order", async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "Amount must be a positive number" });
+    }
+
+    const options = {
+      amount: amount * 100, // amount in paise
+      currency: "INR",
+      receipt: `receipt_order_${Date.now()}`,
+    };
+
+    const order = await razorpay.orders.create(options);
+    res.json({ success: true, order });
+  } catch (err) {
+    console.error("Create Razorpay Order Error:", err);
+    res.status(500).json({ error: "Failed to create Razorpay order" });
+  }
 });
 
-// ✅ Global Error Handler
-app.use((err, req, res, next) => {
-  console.error("Unhandled Error:", err.message);
-  res.status(500).json({ error: "Internal server error" });
+// ✅ Verify Razorpay Payment
+app.post("/api/verify-payment", (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: "Invalid payment details" });
+    }
+
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body)
+      .digest("hex");
+
+    if (expectedSignature === razorpay_signature) {
+      return res.json({ success: true, message: "Payment verified successfully" });
+    } else {
+      return res.status(400).json({ success: false, error: "Invalid signature" });
+    }
+  } catch (err) {
+    console.error("Verify Payment Error:", err);
+    res.status(500).json({ error: "Failed to verify payment" });
+  }
 });
 
-// ✅ Start Server
+// ✅ Server Listener
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
