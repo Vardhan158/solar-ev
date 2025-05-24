@@ -1,7 +1,7 @@
-// ✅ Load Environment Variables
+// Load Environment Variables
 require("dotenv").config();
 
-// ✅ Required Modules
+// Required Modules
 const express = require("express");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
@@ -13,58 +13,88 @@ const Razorpay = require("razorpay");
 
 const app = express();
 
-// ✅ Middlewares
+// Middlewares
 app.use(express.json());
 app.use(cors());
 
-// ✅ MongoDB Connection
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+// MongoDB Connection
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB Connection Error:", err));
 
-// ✅ Razorpay Instance
+// Razorpay Instance
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// ✅ User Schema
-const userSchema = new mongoose.Schema({
-  email: { type: String, unique: true, required: true },
-  password: { type: String, required: true },
-  resetToken: String,
-  resetTokenExpiry: Date,
-}, { timestamps: true });
-
+// User Schema
+const userSchema = new mongoose.Schema(
+  {
+    email: { type: String, unique: true, required: true },
+    password: { type: String, required: true },
+    resetToken: String,
+    resetTokenExpiry: Date,
+  },
+  { timestamps: true }
+);
 const User = mongoose.model("User", userSchema);
 
-// ✅ Charging Record Schema (with isPaid flag)
-const chargingSchema = new mongoose.Schema({
-  vehicleId: { type: String, required: true },
-  startTime: { type: Date, required: true },
-  endTime: { type: Date, required: true },
-  energyUsed: {
-    type: Number,
-    required: true,
-    min: [0, "Energy used cannot be negative"]
+// Charging Record Schema (with isPaid flag)
+const chargingSchema = new mongoose.Schema(
+  {
+    vehicleId: { type: String, required: true },
+    startTime: { type: Date, required: true },
+    endTime: { type: Date, required: true },
+    energyUsed: {
+      type: Number,
+      required: true,
+      min: [0, "Energy used cannot be negative"],
+    },
+    amountCharged: {
+      type: Number,
+      required: true,
+      min: [0, "Amount cannot be negative"],
+    },
+    isPaid: {
+      type: Boolean,
+      default: false,
+    },
   },
-  amountCharged: {
-    type: Number,
-    required: true,
-    min: [0, "Amount cannot be negative"]
-  },
-  isPaid: {
-    type: Boolean,
-    default: false
-  }
-}, { timestamps: true });
-
+  { timestamps: true }
+);
 const ChargingRecord = mongoose.model("ChargingRecord", chargingSchema);
 
-// ✅ Register User
+// Helper: Send Reset Email
+async function sendResetEmail(user, resetToken) {
+  const resetLink = `${process.env.FRONTEND_URL || "https://solar-ev-frontend.onrender.com"}/reset-password/${resetToken}`;
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  await transporter.sendMail({
+    to: user.email,
+    from: process.env.EMAIL_USER,
+    subject: "Password Reset Request",
+    html: `
+      <p>You requested a password reset.</p>
+      <p>Click <a href="${resetLink}">here</a> to reset your password. This link will expire in 1 hour.</p>
+    `,
+  });
+}
+
+// Routes
+
+// Register User
 app.post("/api/register", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -88,7 +118,7 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-// ✅ Login User
+// Login User
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -115,7 +145,7 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// ✅ Forgot Password - Send Email with Token
+// Forgot Password - Send Email with Token
 app.post("/api/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
@@ -128,30 +158,16 @@ app.post("/api/forgot-password", async (req, res) => {
       return res.status(400).json({ error: "User not found" });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
-    const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
 
     user.resetToken = hashedToken;
     user.resetTokenExpiry = Date.now() + 3600000; // 1 hour expiry
     await user.save();
 
-    const resetLink = `${process.env.FRONTEND_URL || "https://solar-ev-frontend.onrender.com"}/reset-password/${resetToken}`;
-
-    // Configure mail transporter
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    // Send mail
-    await transporter.sendMail({
-      to: user.email,
-      from: process.env.EMAIL_USER,
-      subject: "Password Reset Request",
-      html: `<p>You requested a password reset.</p><p>Click <a href="${resetLink}">here</a> to reset your password. This link will expire in 1 hour.</p>`,
-    });
+    await sendResetEmail(user, resetToken);
 
     res.json({ message: "Password reset link sent to email!" });
   } catch (err) {
@@ -160,7 +176,7 @@ app.post("/api/forgot-password", async (req, res) => {
   }
 });
 
-// ✅ Reset Password
+// Reset Password
 app.post("/api/reset-password/:token", async (req, res) => {
   try {
     const { password } = req.body;
@@ -169,7 +185,10 @@ app.post("/api/reset-password/:token", async (req, res) => {
     if (!password)
       return res.status(400).json({ error: "Password is required" });
 
-    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
 
     const user = await User.findOne({
       resetToken: hashedToken,
@@ -192,12 +211,19 @@ app.post("/api/reset-password/:token", async (req, res) => {
   }
 });
 
-// ✅ Add Charging Record
+// Add Charging Record
 app.post("/api/charging", async (req, res) => {
   try {
-    const { vehicleId, startTime, endTime, energyUsed, amountCharged, isPaid } = req.body;
+    const { vehicleId, startTime, endTime, energyUsed, amountCharged, isPaid } =
+      req.body;
 
-    if (!vehicleId || !startTime || !endTime || energyUsed == null || amountCharged == null)
+    if (
+      !vehicleId ||
+      !startTime ||
+      !endTime ||
+      energyUsed == null ||
+      amountCharged == null
+    )
       return res.status(400).json({ error: "All fields are required" });
 
     const record = new ChargingRecord({
@@ -206,7 +232,7 @@ app.post("/api/charging", async (req, res) => {
       endTime: new Date(endTime),
       energyUsed: Number(energyUsed),
       amountCharged: Number(amountCharged),
-      isPaid: isPaid ?? false,
+      isPaid: Boolean(isPaid) || false,
     });
 
     await record.save();
@@ -217,7 +243,7 @@ app.post("/api/charging", async (req, res) => {
   }
 });
 
-// ✅ Get All Charging Records
+// Get All Charging Records
 app.get("/api/charging-records", async (req, res) => {
   try {
     const records = await ChargingRecord.find().sort({ createdAt: -1 });
@@ -228,7 +254,7 @@ app.get("/api/charging-records", async (req, res) => {
   }
 });
 
-// ✅ Update Payment Status of Charging Record
+// Update Payment Status of Charging Record
 app.put("/api/charging/:id/pay", async (req, res) => {
   try {
     const record = await ChargingRecord.findByIdAndUpdate(
@@ -237,7 +263,8 @@ app.put("/api/charging/:id/pay", async (req, res) => {
       { new: true }
     );
 
-    if (!record) return res.status(404).json({ error: "Charging record not found" });
+    if (!record)
+      return res.status(404).json({ error: "Charging record not found" });
 
     res.json({ message: "Payment status updated", record });
   } catch (err) {
@@ -246,19 +273,22 @@ app.put("/api/charging/:id/pay", async (req, res) => {
   }
 });
 
-// ✅ Create Razorpay Order
+// Create Razorpay Order
 app.post("/api/create-order", async (req, res) => {
   try {
     const { amount } = req.body;
 
     if (!amount || amount <= 0) {
-      return res.status(400).json({ error: "Amount must be a positive number" });
+      return res
+        .status(400)
+        .json({ error: "Amount must be a positive number" });
     }
 
     const options = {
-      amount: amount * 100, // amount in paise
+      amount: amount, // amount in paise, ensure frontend sends paise
       currency: "INR",
       receipt: `receipt_order_${Date.now()}`,
+      payment_capture: 1, // auto capture payment
     };
 
     const order = await razorpay.orders.create(options);
@@ -269,7 +299,7 @@ app.post("/api/create-order", async (req, res) => {
   }
 });
 
-// ✅ Verify Razorpay Payment
+// Verify Razorpay Payment
 app.post("/api/verify-payment", (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
@@ -295,7 +325,7 @@ app.post("/api/verify-payment", (req, res) => {
   }
 });
 
-// ✅ Server Listener
+// Server Listener
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
