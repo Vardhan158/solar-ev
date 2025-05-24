@@ -70,7 +70,8 @@ const ChargingRecord = mongoose.model("ChargingRecord", chargingSchema);
 
 // Helper: Send Reset Email
 async function sendResetEmail(user, resetToken) {
-  const resetLink = `${process.env.FRONTEND_URL || "https://solar-ev-frontend.onrender.com"}/reset-password/${resetToken}`;
+  const resetLink =
+    `${process.env.FRONTEND_URL || "https://solar-ev-frontend.onrender.com"}/reset-password/${resetToken}`;
 
   const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -192,7 +193,7 @@ app.post("/api/reset-password/:token", async (req, res) => {
   }
 });
 
-// Charging Record
+// Charging Record - Create
 app.post("/api/charging", async (req, res) => {
   try {
     const { vehicleId, startTime, endTime, energyUsed, amountCharged, isPaid } = req.body;
@@ -216,6 +217,7 @@ app.post("/api/charging", async (req, res) => {
   }
 });
 
+// Fetch all charging records
 app.get("/api/charging-records", async (req, res) => {
   try {
     const records = await ChargingRecord.find().sort({ createdAt: -1 });
@@ -226,6 +228,7 @@ app.get("/api/charging-records", async (req, res) => {
   }
 });
 
+// Update charging record payment status
 app.put("/api/charging/:id/pay", async (req, res) => {
   try {
     const record = await ChargingRecord.findByIdAndUpdate(
@@ -244,12 +247,15 @@ app.put("/api/charging/:id/pay", async (req, res) => {
 // Razorpay: Create Order
 app.post("/api/create-order", async (req, res) => {
   try {
-    const { amount } = req.body;
+    let { amount } = req.body;
+    amount = Number(amount);
+
     if (!amount || amount <= 0)
       return res.status(400).json({ error: "Amount must be a positive number" });
 
+    // Razorpay expects amount in paise (1 INR = 100 paise)
     const options = {
-      amount: amount, // amount in paise
+      amount: amount * 100,
       currency: "INR",
       receipt: `receipt_order_${Date.now()}`,
       payment_capture: 1,
@@ -282,6 +288,8 @@ app.post("/api/verify-payment", (req, res) => {
     console.log("👉 Received Signature:", razorpay_signature);
 
     if (expectedSignature === razorpay_signature) {
+      // You can update your payment record in DB here as paid if needed.
+
       return res.json({ success: true, message: "Payment verified successfully" });
     } else {
       return res.status(400).json({ success: false, error: "Invalid signature" });
@@ -292,7 +300,7 @@ app.post("/api/verify-payment", (req, res) => {
   }
 });
 
-// Server Listener
+// Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
