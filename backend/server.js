@@ -32,7 +32,7 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// User Schema
+// Schemas & Models
 const userSchema = new mongoose.Schema(
   {
     email: { type: String, unique: true, required: true },
@@ -44,7 +44,6 @@ const userSchema = new mongoose.Schema(
 );
 const User = mongoose.model("User", userSchema);
 
-// Charging Record Schema (with isPaid flag)
 const chargingSchema = new mongoose.Schema(
   {
     vehicleId: { type: String, required: true },
@@ -94,11 +93,10 @@ async function sendResetEmail(user, resetToken) {
 
 // Routes
 
-// Register User
+// Register
 app.post("/api/register", async (req, res) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password)
       return res.status(400).json({ error: "Email and password are required" });
 
@@ -107,7 +105,6 @@ app.post("/api/register", async (req, res) => {
       return res.status(400).json({ error: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const user = new User({ email, password: hashedPassword });
     await user.save();
 
@@ -118,11 +115,10 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-// Login User
+// Login
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password)
       return res.status(400).json({ error: "Email and password required" });
 
@@ -145,30 +141,23 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// Forgot Password - Send Email with Token
+// Forgot Password
 app.post("/api/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
-
-    if (!email)
-      return res.status(400).json({ error: "Email is required" });
+    if (!email) return res.status(400).json({ error: "Email is required" });
 
     const user = await User.findOne({ email });
-    if (!user)
-      return res.status(400).json({ error: "User not found" });
+    if (!user) return res.status(400).json({ error: "User not found" });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
-    const hashedToken = crypto
-      .createHash("sha256")
-      .update(resetToken)
-      .digest("hex");
+    const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
 
     user.resetToken = hashedToken;
-    user.resetTokenExpiry = Date.now() + 3600000; // 1 hour expiry
+    user.resetTokenExpiry = Date.now() + 3600000;
     await user.save();
 
     await sendResetEmail(user, resetToken);
-
     res.json({ message: "Password reset link sent to email!" });
   } catch (err) {
     console.error("Forgot Password Error:", err);
@@ -181,27 +170,19 @@ app.post("/api/reset-password/:token", async (req, res) => {
   try {
     const { password } = req.body;
     const token = req.params.token;
+    if (!password) return res.status(400).json({ error: "Password is required" });
 
-    if (!password)
-      return res.status(400).json({ error: "Password is required" });
-
-    const hashedToken = crypto
-      .createHash("sha256")
-      .update(token)
-      .digest("hex");
-
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
     const user = await User.findOne({
       resetToken: hashedToken,
       resetTokenExpiry: { $gt: Date.now() },
     });
 
-    if (!user)
-      return res.status(400).json({ error: "Invalid or expired token" });
+    if (!user) return res.status(400).json({ error: "Invalid or expired token" });
 
     user.password = await bcrypt.hash(password, 10);
     user.resetToken = undefined;
     user.resetTokenExpiry = undefined;
-
     await user.save();
 
     res.json({ message: "Password reset successful" });
@@ -211,19 +192,11 @@ app.post("/api/reset-password/:token", async (req, res) => {
   }
 });
 
-// Add Charging Record
+// Charging Record
 app.post("/api/charging", async (req, res) => {
   try {
-    const { vehicleId, startTime, endTime, energyUsed, amountCharged, isPaid } =
-      req.body;
-
-    if (
-      !vehicleId ||
-      !startTime ||
-      !endTime ||
-      energyUsed == null ||
-      amountCharged == null
-    )
+    const { vehicleId, startTime, endTime, energyUsed, amountCharged, isPaid } = req.body;
+    if (!vehicleId || !startTime || !endTime || energyUsed == null || amountCharged == null)
       return res.status(400).json({ error: "All fields are required" });
 
     const record = new ChargingRecord({
@@ -243,7 +216,6 @@ app.post("/api/charging", async (req, res) => {
   }
 });
 
-// Get All Charging Records
 app.get("/api/charging-records", async (req, res) => {
   try {
     const records = await ChargingRecord.find().sort({ createdAt: -1 });
@@ -254,7 +226,6 @@ app.get("/api/charging-records", async (req, res) => {
   }
 });
 
-// Update Payment Status of Charging Record
 app.put("/api/charging/:id/pay", async (req, res) => {
   try {
     const record = await ChargingRecord.findByIdAndUpdate(
@@ -262,10 +233,7 @@ app.put("/api/charging/:id/pay", async (req, res) => {
       { isPaid: true },
       { new: true }
     );
-
-    if (!record)
-      return res.status(404).json({ error: "Charging record not found" });
-
+    if (!record) return res.status(404).json({ error: "Charging record not found" });
     res.json({ message: "Payment status updated", record });
   } catch (err) {
     console.error("Payment Status Update Error:", err);
@@ -273,22 +241,18 @@ app.put("/api/charging/:id/pay", async (req, res) => {
   }
 });
 
-// Create Razorpay Order
+// Razorpay: Create Order
 app.post("/api/create-order", async (req, res) => {
   try {
     const { amount } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res
-        .status(400)
-        .json({ error: "Amount must be a positive number" });
-    }
+    if (!amount || amount <= 0)
+      return res.status(400).json({ error: "Amount must be a positive number" });
 
     const options = {
-      amount: amount, // amount in paise, ensure frontend sends paise
+      amount: amount, // amount in paise
       currency: "INR",
       receipt: `receipt_order_${Date.now()}`,
-      payment_capture: 1, // auto capture payment
+      payment_capture: 1,
     };
 
     const order = await razorpay.orders.create(options);
@@ -299,7 +263,7 @@ app.post("/api/create-order", async (req, res) => {
   }
 });
 
-// Verify Razorpay Payment
+// Razorpay: Verify Payment
 app.post("/api/verify-payment", (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
@@ -313,6 +277,9 @@ app.post("/api/verify-payment", (req, res) => {
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(body)
       .digest("hex");
+
+    console.log("👉 Expected Signature:", expectedSignature);
+    console.log("👉 Received Signature:", razorpay_signature);
 
     if (expectedSignature === razorpay_signature) {
       return res.json({ success: true, message: "Payment verified successfully" });
