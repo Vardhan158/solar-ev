@@ -12,19 +12,20 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// MongoDB connection
+// MongoDB Connection
 mongoose
   .connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB error:", err));
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// Razorpay instance
+// Razorpay Setup
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// Schemas
+// ===== MongoDB Schemas =====
+
 const userSchema = new mongoose.Schema({
   email: { type: String, unique: true, required: true },
   password: { type: String, required: true },
@@ -44,37 +45,41 @@ const chargingSchema = new mongoose.Schema({
 const User = mongoose.model("User", userSchema);
 const ChargingRecord = mongoose.model("ChargingRecord", chargingSchema);
 
-// Email sender
-async function sendResetEmail(user, resetToken) {
-  const resetLink = `${process.env.FRONTEND_URL || "http://localhost:3000"}/reset-password/${resetToken}`;
+// ===== Helper Function: Send Password Reset Email =====
+async function sendResetEmail(user, token) {
+  const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/reset-password/${token}`;
+
   const transporter = nodemailer.createTransport({
     service: "gmail",
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
   });
 
   await transporter.sendMail({
     to: user.email,
     from: process.env.EMAIL_USER,
-    subject: "Password Reset Request",
-    html: `<p>Click <a href="${resetLink}">here</a> to reset your password. Expires in 1 hour.</p>`,
+    subject: "Password Reset",
+    html: `<p>Click <a href="${resetUrl}">here</a> to reset your password. Token expires in 1 hour.</p>`,
   });
 }
 
-// Routes
+// ===== Routes =====
 
 // Register
 app.post("/api/register", async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password)
-      return res.status(400).json({ error: "Email and password required" });
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
 
-    if (await User.findOne({ email }))
-      return res.status(400).json({ error: "User already exists" });
+    const existingUser = await User.findOne({ email });
+    if (existingUser) return res.status(400).json({ error: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
     await new User({ email, password: hashedPassword }).save();
-    res.json({ message: "Registered successfully" });
+
+    res.status(201).json({ message: "Registration successful" });
   } catch (err) {
     console.error("Register error:", err);
     res.status(500).json({ error: "Server error" });
@@ -85,8 +90,7 @@ app.post("/api/register", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password)
-      return res.status(400).json({ error: "Email and password required" });
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
 
     const user = await User.findOne({ email });
     if (!user || !(await bcrypt.compare(password, user.password)))
@@ -107,13 +111,13 @@ app.post("/api/forgot-password", async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ error: "User not found" });
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    user.resetToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    user.resetToken = crypto.createHash("sha256").update(rawToken).digest("hex");
     user.resetTokenExpiry = Date.now() + 3600000; // 1 hour
     await user.save();
 
-    await sendResetEmail(user, resetToken);
-    res.json({ message: "Reset email sent" });
+    await sendResetEmail(user, rawToken);
+    res.json({ message: "Password reset email sent" });
   } catch (err) {
     console.error("Forgot password error:", err);
     res.status(500).json({ error: "Server error" });
@@ -123,14 +127,17 @@ app.post("/api/forgot-password", async (req, res) => {
 // Reset Password
 app.post("/api/reset-password/:token", async (req, res) => {
   try {
+    const { password } = req.body;
     const hashedToken = crypto.createHash("sha256").update(req.params.token).digest("hex");
+
     const user = await User.findOne({
       resetToken: hashedToken,
       resetTokenExpiry: { $gt: Date.now() },
     });
+
     if (!user) return res.status(400).json({ error: "Invalid or expired token" });
 
-    user.password = await bcrypt.hash(req.body.password, 10);
+    user.password = await bcrypt.hash(password, 10);
     user.resetToken = undefined;
     user.resetTokenExpiry = undefined;
     await user.save();
@@ -146,22 +153,24 @@ app.post("/api/reset-password/:token", async (req, res) => {
 app.post("/api/charging", async (req, res) => {
   try {
     const { vehicleId, startTime, endTime, energyUsed, amountCharged, isPaid } = req.body;
-    if (!vehicleId || !startTime || !endTime || energyUsed == null || amountCharged == null)
-      return res.status(400).json({ error: "All fields required" });
+
+    if (!vehicleId || !startTime || !endTime || energyUsed == null || amountCharged == null) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
 
     const record = new ChargingRecord({
       vehicleId,
-      startTime: new Date(startTime),
-      endTime: new Date(endTime),
+      startTime,
+      endTime,
       energyUsed,
       amountCharged,
       isPaid: Boolean(isPaid),
     });
 
     await record.save();
-    res.json({ message: "Record added", record });
+    res.status(201).json({ message: "Charging record added", record });
   } catch (err) {
-    console.error("Add record error:", err);
+    console.error("Add charging error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -172,12 +181,12 @@ app.get("/api/charging-records", async (req, res) => {
     const records = await ChargingRecord.find().sort({ createdAt: -1 });
     res.json(records);
   } catch (err) {
-    console.error("Fetch records error:", err);
+    console.error("Fetch charging records error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// Mark as Paid
+// Mark Charging Record as Paid
 app.put("/api/charging/:id/pay", async (req, res) => {
   try {
     const record = await ChargingRecord.findByIdAndUpdate(
@@ -185,10 +194,11 @@ app.put("/api/charging/:id/pay", async (req, res) => {
       { isPaid: true },
       { new: true }
     );
+
     if (!record) return res.status(404).json({ error: "Record not found" });
-    res.json({ message: "Payment updated", record });
+    res.json({ message: "Marked as paid", record });
   } catch (err) {
-    console.error("Mark paid error:", err);
+    console.error("Mark as paid error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -197,22 +207,20 @@ app.put("/api/charging/:id/pay", async (req, res) => {
 app.post("/api/create-order", async (req, res) => {
   try {
     const { amount, chargingRecordId } = req.body;
-    if (!amount || amount <= 0) return res.status(400).json({ error: "Invalid amount" });
-    if (!chargingRecordId) return res.status(400).json({ error: "chargingRecordId required" });
+    if (!amount || !chargingRecordId) return res.status(400).json({ error: "Amount and chargingRecordId required" });
 
-    const options = {
-      amount: Math.round(amount), // in paise
+    const order = await razorpay.orders.create({
+      amount: Math.round(amount), // Amount in paise
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
       payment_capture: 1,
       notes: { chargingRecordId },
-    };
+    });
 
-    const order = await razorpay.orders.create(options);
     res.json({ success: true, order });
   } catch (err) {
     console.error("Create order error:", err);
-    res.status(500).json({ error: "Could not create order" });
+    res.status(500).json({ error: "Failed to create order" });
   }
 });
 
@@ -220,28 +228,35 @@ app.post("/api/create-order", async (req, res) => {
 app.post("/api/verify-payment", async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, chargingRecordId } = req.body;
+
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !chargingRecordId) {
-      return res.status(400).json({ error: "Missing payment data" });
+      return res.status(400).json({ error: "Missing payment information" });
     }
 
-    const generated_signature = crypto
+    const expectedSignature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 
-    if (generated_signature !== razorpay_signature)
+    if (expectedSignature !== razorpay_signature) {
       return res.status(400).json({ error: "Invalid signature" });
+    }
 
-    const record = await ChargingRecord.findByIdAndUpdate(chargingRecordId, { isPaid: true }, { new: true });
-    if (!record) return res.status(404).json({ error: "Charging record not found" });
+    const updatedRecord = await ChargingRecord.findByIdAndUpdate(
+      chargingRecordId,
+      { isPaid: true },
+      { new: true }
+    );
 
-    res.json({ success: true, message: "Payment verified", record });
+    if (!updatedRecord) return res.status(404).json({ error: "Charging record not found" });
+
+    res.json({ success: true, message: "Payment verified", record: updatedRecord });
   } catch (err) {
     console.error("Verify payment error:", err);
-    res.status(500).json({ error: "Verification failed" });
+    res.status(500).json({ error: "Payment verification failed" });
   }
 });
 
-// Server
+// ===== Server Start =====
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
