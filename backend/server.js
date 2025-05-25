@@ -32,7 +32,7 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// User Schema
+// User Schema & Model
 const userSchema = new mongoose.Schema(
   {
     email: { type: String, unique: true, required: true },
@@ -44,7 +44,7 @@ const userSchema = new mongoose.Schema(
 );
 const User = mongoose.model("User", userSchema);
 
-// Charging Record Schema
+// Charging Record Schema & Model
 const chargingSchema = new mongoose.Schema(
   {
     vehicleId: { type: String, required: true },
@@ -160,7 +160,7 @@ app.post("/api/forgot-password", async (req, res) => {
     const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
 
     user.resetToken = hashedToken;
-    user.resetTokenExpiry = Date.now() + 3600000;
+    user.resetTokenExpiry = Date.now() + 3600000; // 1 hour expiry
     await user.save();
 
     await sendResetEmail(user, resetToken);
@@ -267,7 +267,7 @@ app.post("/api/create-order", async (req, res) => {
       return res.status(400).json({ error: "Amount must be positive" });
 
     const options = {
-      amount: amount,
+      amount: amount * 100, // Razorpay expects amount in paise (cents)
       currency: "INR",
       receipt: `receipt_order_${Date.now()}`,
       payment_capture: 1,
@@ -303,32 +303,30 @@ app.post("/api/verify-payment", (req, res) => {
   }
 });
 
-// ✅ Automatically Mark Charging Record as Paid
-app.post("/api/payment-success", async (req, res) => {
+// Automatically Mark Charging Record as Paid (After Payment Verification)
+app.put("/api/charging/:id/mark-paid", async (req, res) => {
   try {
-    const { vehicleId } = req.body;
-
-    if (!vehicleId)
-      return res.status(400).json({ error: "Vehicle ID is required" });
-
-    const updatedRecord = await ChargingRecord.findOneAndUpdate(
-      { vehicleId, isPaid: false },
+    const record = await ChargingRecord.findByIdAndUpdate(
+      req.params.id,
       { isPaid: true },
-      { sort: { createdAt: -1 }, new: true }
+      { new: true }
     );
 
-    if (!updatedRecord)
-      return res.status(404).json({ error: "No unpaid record found for this vehicle" });
+    if (!record)
+      return res.status(404).json({ error: "Charging record not found" });
 
-    res.json({ success: true, message: "Charging record marked as paid", record: updatedRecord });
+    res.json({ message: "Charging record marked as paid", record });
   } catch (err) {
-    console.error("Payment Success Update Error:", err);
-    res.status(500).json({ error: "Failed to update payment status" });
+    console.error("Mark Charging Paid Error:", err);
+    res.status(500).json({ error: "Failed to update charging record" });
   }
+});
+
+// Root Route
+app.get("/", (req, res) => {
+  res.send("Solar EV Backend Running 🚀");
 });
 
 // Start Server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
