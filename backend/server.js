@@ -44,7 +44,7 @@ const userSchema = new mongoose.Schema(
 );
 const User = mongoose.model("User", userSchema);
 
-// Charging Record Schema (with isPaid flag)
+// Charging Record Schema
 const chargingSchema = new mongoose.Schema(
   {
     vehicleId: { type: String, required: true },
@@ -92,7 +92,7 @@ async function sendResetEmail(user, resetToken) {
   });
 }
 
-// Routes
+// -------------------- ROUTES -------------------- //
 
 // Register User
 app.post("/api/register", async (req, res) => {
@@ -145,7 +145,7 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// Forgot Password - Send Email with Token
+// Forgot Password
 app.post("/api/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
@@ -164,7 +164,7 @@ app.post("/api/forgot-password", async (req, res) => {
       .digest("hex");
 
     user.resetToken = hashedToken;
-    user.resetTokenExpiry = Date.now() + 3600000; // 1 hour expiry
+    user.resetTokenExpiry = Date.now() + 3600000;
     await user.save();
 
     await sendResetEmail(user, resetToken);
@@ -217,13 +217,7 @@ app.post("/api/charging", async (req, res) => {
     const { vehicleId, startTime, endTime, energyUsed, amountCharged, isPaid } =
       req.body;
 
-    if (
-      !vehicleId ||
-      !startTime ||
-      !endTime ||
-      energyUsed == null ||
-      amountCharged == null
-    )
+    if (!vehicleId || !startTime || !endTime || energyUsed == null || amountCharged == null)
       return res.status(400).json({ error: "All fields are required" });
 
     const record = new ChargingRecord({
@@ -254,7 +248,7 @@ app.get("/api/charging-records", async (req, res) => {
   }
 });
 
-// Update Payment Status of Charging Record
+// Update Payment Status
 app.put("/api/charging/:id/pay", async (req, res) => {
   try {
     const record = await ChargingRecord.findByIdAndUpdate(
@@ -278,17 +272,14 @@ app.post("/api/create-order", async (req, res) => {
   try {
     const { amount } = req.body;
 
-    if (!amount || amount <= 0) {
-      return res
-        .status(400)
-        .json({ error: "Amount must be a positive number" });
-    }
+    if (!amount || amount <= 0)
+      return res.status(400).json({ error: "Amount must be positive" });
 
     const options = {
-      amount: amount, // amount in paise, ensure frontend sends paise
+      amount: amount,
       currency: "INR",
       receipt: `receipt_order_${Date.now()}`,
-      payment_capture: 1, // auto capture payment
+      payment_capture: 1,
     };
 
     const order = await razorpay.orders.create(options);
@@ -303,10 +294,6 @@ app.post("/api/create-order", async (req, res) => {
 app.post("/api/verify-payment", (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({ error: "Invalid payment details" });
-    }
 
     const body = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSignature = crypto
@@ -325,7 +312,7 @@ app.post("/api/verify-payment", (req, res) => {
   }
 });
 
-// Server Listener
+// Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
