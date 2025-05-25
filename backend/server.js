@@ -107,7 +107,6 @@ app.post("/api/register", async (req, res) => {
       return res.status(400).json({ error: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const user = new User({ email, password: hashedPassword });
     await user.save();
 
@@ -158,17 +157,13 @@ app.post("/api/forgot-password", async (req, res) => {
       return res.status(400).json({ error: "User not found" });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
-    const hashedToken = crypto
-      .createHash("sha256")
-      .update(resetToken)
-      .digest("hex");
+    const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
 
     user.resetToken = hashedToken;
     user.resetTokenExpiry = Date.now() + 3600000;
     await user.save();
 
     await sendResetEmail(user, resetToken);
-
     res.json({ message: "Password reset link sent to email!" });
   } catch (err) {
     console.error("Forgot Password Error:", err);
@@ -185,10 +180,7 @@ app.post("/api/reset-password/:token", async (req, res) => {
     if (!password)
       return res.status(400).json({ error: "Password is required" });
 
-    const hashedToken = crypto
-      .createHash("sha256")
-      .update(token)
-      .digest("hex");
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
     const user = await User.findOne({
       resetToken: hashedToken,
@@ -203,7 +195,6 @@ app.post("/api/reset-password/:token", async (req, res) => {
     user.resetTokenExpiry = undefined;
 
     await user.save();
-
     res.json({ message: "Password reset successful" });
   } catch (err) {
     console.error("Reset Password Error:", err);
@@ -248,7 +239,7 @@ app.get("/api/charging-records", async (req, res) => {
   }
 });
 
-// Update Payment Status
+// Manually Mark Charging Record as Paid
 app.put("/api/charging/:id/pay", async (req, res) => {
   try {
     const record = await ChargingRecord.findByIdAndUpdate(
@@ -290,7 +281,7 @@ app.post("/api/create-order", async (req, res) => {
   }
 });
 
-// Verify Razorpay Payment
+// Verify Razorpay Payment Signature
 app.post("/api/verify-payment", (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
@@ -309,6 +300,30 @@ app.post("/api/verify-payment", (req, res) => {
   } catch (err) {
     console.error("Verify Payment Error:", err);
     res.status(500).json({ error: "Failed to verify payment" });
+  }
+});
+
+// ✅ Automatically Mark Charging Record as Paid
+app.post("/api/payment-success", async (req, res) => {
+  try {
+    const { vehicleId } = req.body;
+
+    if (!vehicleId)
+      return res.status(400).json({ error: "Vehicle ID is required" });
+
+    const updatedRecord = await ChargingRecord.findOneAndUpdate(
+      { vehicleId, isPaid: false },
+      { isPaid: true },
+      { sort: { createdAt: -1 }, new: true }
+    );
+
+    if (!updatedRecord)
+      return res.status(404).json({ error: "No unpaid record found for this vehicle" });
+
+    res.json({ success: true, message: "Charging record marked as paid", record: updatedRecord });
+  } catch (err) {
+    console.error("Payment Success Update Error:", err);
+    res.status(500).json({ error: "Failed to update payment status" });
   }
 });
 
